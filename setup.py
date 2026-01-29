@@ -10,7 +10,7 @@ setup(
         if line.strip() and not line.startswith('#')
     ],
     python_requires=">=3.10",
-    author="Your Name",
+    author="Achyut Dubey",
     description="Automated lead generation pipeline for high-pain IT sales roles",
     long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
