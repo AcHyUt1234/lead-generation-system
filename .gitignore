@@ -1,0 +1,62 @@
+cat >> .gitignore << 'EOF'
+
+# Environment variables (NEVER commit these!)
+.env
+.env.local
+.env.production
+
+# API keys and secrets
+secrets/
+*.key
+*.pem
+
+# Data files
+data/
+*.csv
+*.xlsx
+exports/
+raw_data/
+
+# Logs
+logs/
+*.log
+
+# Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Credentials (extra safety)
+credentials.json
+config.ini
+EOF

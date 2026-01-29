@@ -1,0 +1,59 @@
+# Lead Generation System - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core scraping
+selenium==4.16.0
+playwright==1.40.0
+beautifulsoup4==4.12.2
+scrapy==2.11.0
+requests==2.31.0
+lxml==4.9.3
+
+# Data processing
+pandas==2.1.4
+numpy==1.26.2
+openpyxl==3.1.2  # For Excel export if needed
+
+# Database (optional - for storing raw data)
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9  # PostgreSQL
+redis==5.0.1  # For caching/deduplication
+
+# Enrichment APIs (install as needed)
+# apollo-io-python  # Not on PyPI - use requests
+# hunter-python  # Email verification
+
+# LLM Integration
+anthropic==0.39.0  # For Claude API summarization
+langchain==0.1.0  # Optional: structured extraction
+langchain-anthropic==0.1.0  # LangChain integration for Claude
+
+# HubSpot Integration
+hubspot-api-client==8.2.1
+
+# Utilities
+python-dotenv==1.0.0  # Environment variables
+loguru==0.7.2  # Better logging
+tqdm==4.66.1  # Progress bars
+tenacity==8.2.3  # Retry logic
+
+# Proxy management
+requests-ip-rotator==1.0.14
+fake-useragent==1.4.0
+
+# Data validation
+email-validator==2.1.0
+phonenumbers==8.13.27
+
+# Scheduling (choose one)
+schedule==1.2.0  # Simple scheduling
+# apache-airflow==2.7.3  # Production scheduling (heavier)
+
+# Testing
+pytest==7.4.3
+pytest-mock==3.12.0
+
+# Development
+black==23.12.1  # Code formatting
+flake8==7.0.0  # Linting
+mypy==1.7.1  # Type checking
