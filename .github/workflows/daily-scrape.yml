@@ -1,21 +1,12 @@
 name: Lead Generation Pipeline
 
 on:
-  # Run manually from Actions tab
   workflow_dispatch:
-  
-  # Uncomment below to run on schedule (daily at 3 AM UTC)
-  # schedule:
-  #   - cron: '0 3 * * *'
-  
-  # Uncomment below to run on every push (useful for testing)
-  # push:
-  #   branches: [ master ]
 
 jobs:
   generate-leads:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # 1 hour max
+    timeout-minutes: 60
     
     steps:
     - name: Checkout code
@@ -31,8 +22,45 @@ jobs:
         python -m pip install --upgrade pip
         pip install pandas requests anthropic
     
+    - name: Verify files exist
+      run: |
+        echo "=== Checking repository structure ==="
+        ls -la
+        echo ""
+        echo "=== Checking for required files ==="
+        if [ -f "apollo_enricher.py" ]; then
+          echo "✓ apollo_enricher.py found"
+        else
+          echo "✗ apollo_enricher.py NOT found"
+        fi
+        if [ -f "lead_generation_pipeline.py" ]; then
+          echo "✓ lead_generation_pipeline.py found"
+        else
+          echo "✗ lead_generation_pipeline.py NOT found"
+        fi
+    
+    - name: Verify API keys are set
+      run: |
+        echo "=== Checking API keys ==="
+        if [ -n "$APOLLO_API_KEY" ]; then
+          echo "✓ APOLLO_API_KEY is set (length: ${#APOLLO_API_KEY})"
+        else
+          echo "✗ APOLLO_API_KEY is NOT set"
+        fi
+        if [ -n "$ANTHROPIC_API_KEY" ]; then
+          echo "✓ ANTHROPIC_API_KEY is set (length: ${#ANTHROPIC_API_KEY})"
+        else
+          echo "✗ ANTHROPIC_API_KEY is NOT set"
+        fi
+      env:
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
+    
     - name: Create outputs directory
-      run: mkdir -p outputs
+      run: |
+        mkdir -p outputs
+        echo "✓ Created outputs directory"
+        ls -la
     
     - name: Run lead generation pipeline
       env:
@@ -40,27 +68,48 @@ jobs:
         APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
         HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
       run: |
+        echo "=== Starting pipeline ==="
         python lead_generation_pipeline.py
+        echo "=== Pipeline finished ==="
+    
+    - name: Check for output files
+      if: always()
+      run: |
+        echo "=== Checking outputs directory ==="
+        if [ -d "outputs" ]; then
+          echo "✓ outputs directory exists"
+          echo "Contents:"
+          ls -la outputs/
+          if [ -f outputs/*.csv ]; then
+            echo "✓ CSV file(s) found:"
+            ls -lh outputs/*.csv
+          else
+            echo "✗ No CSV files found in outputs/"
+          fi
+        else
+          echo "✗ outputs directory does not exist"
+        fi
+        echo ""
+        echo "=== Checking current directory ==="
+        echo "All files in current directory:"
+        ls -la
     
     - name: Upload CSV results
       uses: actions/upload-artifact@v4
-      if: always()  # Upload even if previous steps fail
+      if: always()
       with:
         name: lead-export-${{ github.run_number }}
         path: outputs/*.csv
         retention-days: 90
         if-no-files-found: warn
     
-    - name: Display results summary
+    - name: Upload debug logs (if CSV not found)
+      uses: actions/upload-artifact@v4
       if: always()
-      run: |
-        echo "==================================================="
-        echo "Pipeline Execution Complete"
-        echo "==================================================="
-        if [ -f outputs/*.csv ]; then
-          echo "✓ CSV file(s) created successfully"
-          ls -lh outputs/
-        else
-          echo "⚠ No CSV files found"
-        fi
-        echo "==================================================="
+      with:
+        name: debug-logs-${{ github.run_number }}
+        path: |
+          outputs/
+          *.log
+        retention-days: 30
+        if-no-files-found: ignore
