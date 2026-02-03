@@ -1,17 +1,21 @@
 """
-Lead Generation System - Starter Implementation
-High-Pain Sales Roles Scraper for StepStone & LinkedIn
+Lead Generation System - Production Ready Implementation
+High-Pain Sales Roles Scraper with Apollo.io Enrichment
 
-This is a modular starter template showing the architecture.
-Each component should be expanded based on the full implementation plan.
+This version includes:
+- Apollo.io contact enrichment integration
+- Claude API for job summarization
+- Mock data for initial testing (replace with real scrapers)
+- HubSpot-ready CSV export
 """
 
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import re
-import time
+import os
 import logging
+import sys
 
 # Configure logging
 logging.basicConfig(
@@ -22,11 +26,27 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# IMPORT APOLLO ENRICHER
+# ============================================================================
+
+try:
+    from apollo_enricher import ApolloEnricher
+except ImportError:
+    logger.error("apollo_enricher.py not found. Make sure it's in the same directory.")
+    sys.exit(1)
+
+
+# ============================================================================
 # 1. CONFIGURATION
 # ============================================================================
 
 class Config:
     """Central configuration for the lead generation system"""
+    
+    # API Keys (loaded from environment variables)
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+    APOLLO_API_KEY = os.getenv("APOLLO_API_KEY")
+    HUBSPOT_API_KEY = os.getenv("HUBSPOT_API_KEY")
     
     # Target roles (Priority 1)
     TARGET_ROLES = [
@@ -36,13 +56,6 @@ class Config:
         "SAP Consultant Sales",
         "Security Consultant",
         "IT Security Consultant",
-    ]
-    
-    # Fallback roles
-    FALLBACK_ROLES = [
-        "Cloud Sales",
-        "Industry 4.0 Sales",
-        "IoT Sales"
     ]
     
     # German translations for StepStone
@@ -55,26 +68,15 @@ class Config:
         "Sicherheitsberater"
     ]
     
-    # Filter criteria
-    MIN_EMPLOYEE_COUNT = 50
-    REGIONS = ["Germany", "Austria", "Switzerland", "DACH"]
-    
     # Pain scoring thresholds
     MIN_PAIN_SCORE = 60
     HIGH_PAIN_THRESHOLD = 80
     
     # Enrichment settings
     MIN_CONTACTS_PER_COMPANY = 3
-    CONTACT_PRIORITY = [
-        "CEO", "Managing Director", "Geschäftsführer",
-        "CRO", "VP Sales", "Head of Sales",
-        "Sales Director", "Vertriebsleiter",
-        "Head of Business Development",
-        "Head of HR", "CHRO"
-    ]
     
     # Output settings
-    OUTPUT_DIR = "/mnt/user-data/outputs"
+    OUTPUT_DIR = "outputs"  # Changed for GitHub Actions compatibility
     CSV_ENCODING = "utf-8"
 
 
@@ -93,11 +95,7 @@ class JobListing:
         self.posted_date = data.get('posted_date')
         self.job_url = data.get('job_url')
         self.description = data.get('description', '')
-        self.source = data.get('source')  # 'StepStone' or 'LinkedIn'
-        
-        # LinkedIn-specific
-        self.total_applications = data.get('total_applications', 0)
-        self.applications_last_24h = data.get('applications_last_24h', 0)
+        self.source = data.get('source', 'Mock')
         
         # Derived fields
         self.days_open = self._calculate_days_open()
@@ -109,7 +107,6 @@ class JobListing:
             return 0
         
         if isinstance(self.posted_date, str):
-            # Parse date string (adjust format as needed)
             try:
                 posted = datetime.strptime(self.posted_date, "%Y-%m-%d")
             except ValueError:
@@ -130,7 +127,6 @@ class JobListing:
             'source': self.source,
             'days_open': self.days_open,
             'pain_score': self.pain_score,
-            'total_applications': self.total_applications,
         }
 
 
@@ -142,8 +138,8 @@ class Contact:
         self.last_name = data.get('last_name')
         self.email = data.get('email')
         self.phone = data.get('phone')
-        self.role = data.get('role')
-        self.seniority = data.get('seniority')  # C-Level, VP, Head, Director
+        self.title = data.get('title')
+        self.seniority = data.get('seniority')
         self.linkedin_url = data.get('linkedin_url')
         
     def to_dict(self, prefix: str = "") -> Dict:
@@ -153,7 +149,7 @@ class Contact:
             f'{prefix}last_name': self.last_name,
             f'{prefix}email': self.email,
             f'{prefix}phone': self.phone,
-            f'{prefix}role': self.role,
+            f'{prefix}title': self.title,
             f'{prefix}seniority': self.seniority,
             f'{prefix}linkedin_url': self.linkedin_url,
         }
@@ -169,8 +165,16 @@ class EnrichedLead:
     def __init__(self, job: JobListing):
         self.job = job
         self.contacts: List[Contact] = []
-        self.company_data = {}
+        self.company_domain = self._extract_domain(job.company_website)
         self.job_summary = ""
+        
+    def _extract_domain(self, url: str) -> Optional[str]:
+        """Extract domain from URL"""
+        if not url:
+            return None
+        pattern = r'(?:https?://)?(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,})'
+        match = re.search(pattern, url)
+        return match.group(1) if match else None
         
     def add_contact(self, contact: Contact):
         """Add a contact to the lead"""
@@ -187,7 +191,7 @@ class EnrichedLead:
     def to_csv_row(self) -> Dict:
         """Convert to flat dictionary for CSV export"""
         row = self.job.to_dict()
-        row.update(self.company_data)
+        row['company_domain'] = self.company_domain
         row['job_summary'] = self.job_summary
         
         # Add contacts (up to 5)
@@ -198,66 +202,86 @@ class EnrichedLead:
 
 
 # ============================================================================
-# 3. SCRAPING COMPONENTS
+# 3. MOCK DATA FOR TESTING (Replace with real scrapers later)
 # ============================================================================
 
-class StepStoneScraper:
-    """Scraper for StepStone job board"""
+def generate_mock_jobs() -> List[JobListing]:
+    """
+    Generate mock job listings for testing
+    Replace this with real StepStone/LinkedIn scrapers
+    """
+    logger.info("Generating mock job data for testing...")
     
-    def __init__(self):
-        self.base_url = "https://www.stepstone.de/work"
-        logger.info("Initialized StepStone scraper")
-        
-    def scrape_jobs(self, role_keywords: List[str], max_jobs: int = 100) -> List[JobListing]:
-        """
-        Scrape jobs from StepStone
-        
-        NOTE: This is a placeholder. Actual implementation requires:
-        - Selenium/Playwright for JavaScript rendering
-        - Proxy rotation for avoiding blocks
-        - Robust error handling
-        """
-        logger.info(f"Scraping StepStone for roles: {role_keywords}")
-        
-        # TODO: Implement actual scraping logic
-        # For now, return mock data for testing
-        mock_jobs = []
-        
-        logger.warning("Using mock data - implement actual scraping")
-        return mock_jobs
+    mock_data = [
+        {
+            'title': 'Senior Sales Engineer (IT)',
+            'company_name': 'Salesforce',
+            'company_website': 'https://salesforce.com',
+            'location': 'Munich, Germany',
+            'posted_date': (datetime.now() - timedelta(days=45)).strftime("%Y-%m-%d"),
+            'job_url': 'https://salesforce.com/careers/job123',
+            'description': '''We are seeking an experienced Senior Sales Engineer to join our growing team.
+            
+            Requirements:
+            - 5+ years in technical sales, preferably SaaS/Cloud
+            - Deep understanding of API integrations and enterprise architecture
+            - Experience with Fortune 500 clients
+            - Fluent in German and English
+            - Strong presentation and communication skills
+            
+            Responsibilities:
+            - Lead technical pre-sales discussions
+            - Create POCs and demos for enterprise clients
+            - Work closely with product and sales teams
+            - Support complex deals with technical expertise''',
+            'source': 'Mock (StepStone)'
+        },
+        {
+            'title': 'Cyber Security Sales Consultant',
+            'company_name': 'Palo Alto Networks',
+            'company_website': 'https://paloaltonetworks.com',
+            'location': 'Frankfurt, Germany',
+            'posted_date': (datetime.now() - timedelta(days=32)).strftime("%Y-%m-%d"),
+            'job_url': 'https://paloaltonetworks.com/careers/job456',
+            'description': '''Join our cybersecurity team as a Sales Consultant.
+            
+            Requirements:
+            - 3+ years in cybersecurity sales
+            - Understanding of network security, firewalls, threat detection
+            - Experience selling to enterprise clients
+            - German language required
+            
+            We offer competitive compensation and professional development.''',
+            'source': 'Mock (LinkedIn)'
+        },
+        {
+            'title': 'SAP Sales Consultant',
+            'company_name': 'SAP',
+            'company_website': 'https://sap.com',
+            'location': 'Berlin, Germany',
+            'posted_date': (datetime.now() - timedelta(days=67)).strftime("%Y-%m-%d"),
+            'job_url': 'https://sap.com/careers/job789',
+            'description': '''Looking for an experienced SAP Sales Consultant.
+            
+            Requirements:
+            - Deep SAP product knowledge (S/4HANA, ERP, Cloud)
+            - 5+ years enterprise software sales
+            - Experience with large deals (€1M+)
+            - Consultative selling approach
+            - Fluent German and English
+            
+            This role requires travel across DACH region.''',
+            'source': 'Mock (StepStone)'
+        },
+    ]
     
-    def _parse_job_page(self, html: str) -> Dict:
-        """Parse individual job page HTML"""
-        # TODO: Implement HTML parsing
-        pass
-
-
-class LinkedInScraper:
-    """Scraper for LinkedIn Jobs"""
-    
-    def __init__(self):
-        self.base_url = "https://www.linkedin.com/jobs/search"
-        logger.info("Initialized LinkedIn scraper")
-        
-    def scrape_jobs(self, role_keywords: List[str], max_jobs: int = 100) -> List[JobListing]:
-        """
-        Scrape jobs from LinkedIn
-        
-        NOTE: LinkedIn scraping is high-risk. Consider alternatives:
-        - LinkedIn API (limited)
-        - Third-party data providers (Bright Data, etc.)
-        """
-        logger.info(f"Scraping LinkedIn for roles: {role_keywords}")
-        
-        # TODO: Implement actual scraping or API integration
-        mock_jobs = []
-        
-        logger.warning("Using mock data - implement actual scraping")
-        return mock_jobs
+    jobs = [JobListing(data) for data in mock_data]
+    logger.info(f"Generated {len(jobs)} mock jobs")
+    return jobs
 
 
 # ============================================================================
-# 4. FILTERING & SCORING
+# 4. PAIN SCORING
 # ============================================================================
 
 class JobFilter:
@@ -265,20 +289,7 @@ class JobFilter:
     
     @staticmethod
     def calculate_pain_score(job: JobListing) -> int:
-        """
-        Calculate pain score based on multiple signals
-        
-        Scoring logic:
-        - Base: 50 points
-        - +20: Job open >30 days
-        - +15: Job open >60 days
-        - +10: Senior/Lead/Principal in title
-        - +10: 100+ applications (LinkedIn)
-        - +10: SAP/Security/Complex tech mentioned
-        - +10: Enterprise/Consultative selling mentioned
-        - -30: Inside sales mentioned
-        - -20: SDR/BDR in description
-        """
+        """Calculate pain score based on multiple signals"""
         score = 50
         
         # Days open scoring
@@ -288,16 +299,12 @@ class JobFilter:
             score += 20
             
         # Seniority in title
-        senior_keywords = ['senior', 'lead', 'principal', 'sr.']
+        senior_keywords = ['senior', 'lead', 'principal', 'sr.', 'sr ']
         if any(kw in job.title.lower() for kw in senior_keywords):
             score += 10
             
-        # Application volume (LinkedIn)
-        if job.total_applications > 100:
-            score += 10
-            
         # Technical complexity
-        tech_keywords = ['sap', 'security', 'cybersecurity', 'cloud', 'enterprise']
+        tech_keywords = ['sap', 'security', 'cybersecurity', 'cyber security', 'cloud', 'enterprise']
         description_lower = job.description.lower()
         if any(kw in description_lower for kw in tech_keywords):
             score += 10
@@ -310,15 +317,12 @@ class JobFilter:
         # Negative signals
         if 'inside sales' in description_lower:
             score -= 30
-        if any(kw in description_lower for kw in ['sdr', 'bdr', 'business development rep']):
-            score -= 20
             
-        return max(0, score)  # Don't go negative
+        return max(0, score)
     
     @staticmethod
     def should_exclude(job: JobListing) -> bool:
-        """Check if job should be excluded based on criteria"""
-        description_lower = job.description.lower()
+        """Check if job should be excluded"""
         title_lower = job.title.lower()
         
         # Exclude junior/trainee roles
@@ -326,11 +330,7 @@ class JobFilter:
             return True
             
         # Exclude SDR/BDR
-        if any(kw in title_lower for kw in ['sdr', 'bdr', 'business development rep']):
-            return True
-            
-        # Exclude B2C/retail
-        if any(kw in description_lower for kw in ['b2c', 'retail', 'call center', 'door-to-door']):
+        if any(kw in title_lower for kw in ['sdr', 'bdr']):
             return True
             
         return False
@@ -340,15 +340,12 @@ class JobFilter:
         qualified_jobs = []
         
         for job in jobs:
-            # Skip excluded jobs
             if self.should_exclude(job):
                 logger.debug(f"Excluded: {job.title} at {job.company_name}")
                 continue
                 
-            # Calculate pain score
             job.pain_score = self.calculate_pain_score(job)
             
-            # Keep only high-pain jobs
             if job.pain_score >= Config.MIN_PAIN_SCORE:
                 qualified_jobs.append(job)
                 logger.info(f"Qualified: {job.title} (score: {job.pain_score})")
@@ -358,154 +355,114 @@ class JobFilter:
 
 
 # ============================================================================
-# 5. ENRICHMENT
-# ============================================================================
-
-class ContactEnricher:
-    """Enrich companies with decision-maker contacts"""
-    
-    def __init__(self, api_key: str = None, provider: str = "leap"):
-        """
-        Initialize enrichment service
-        
-        Supported providers:
-        - leap: Leap.ai
-        - cognizant: Cognizant API
-        - lucia: Lucia API
-        - apollo: Apollo.io (backup)
-        """
-        self.api_key = api_key
-        self.provider = provider
-        logger.info(f"Initialized {provider} enrichment service")
-        
-    def enrich_company(self, company_domain: str) -> List[Contact]:
-        """
-        Find decision-makers at a company
-        
-        NOTE: This is a placeholder. Actual implementation requires:
-        - API integration with chosen provider
-        - Error handling for rate limits
-        - Contact verification
-        """
-        logger.info(f"Enriching contacts for: {company_domain}")
-        
-        # TODO: Implement actual API calls
-        # For now, return mock data
-        mock_contacts = []
-        
-        logger.warning("Using mock data - implement actual enrichment")
-        return mock_contacts
-    
-    def verify_email(self, email: str) -> bool:
-        """Verify email deliverability"""
-        # TODO: Integrate with Hunter.io or similar
-        # Basic format check for now
-        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        return bool(re.match(pattern, email))
-
-
-# ============================================================================
-# 6. JOB SUMMARIZATION
+# 5. JOB SUMMARIZATION WITH CLAUDE
 # ============================================================================
 
 class JobSummarizer:
     """Generate call-ready job summaries using Claude"""
     
-    def __init__(self, api_key: str = None):
-        """
-        Initialize Claude summarization
-        
-        Uses Anthropic Claude API (3.5 Sonnet recommended)
-        """
-        self.api_key = api_key
-        logger.info("Initialized Anthropic Claude summarization service")
-        
+    def __init__(self):
+        try:
+            from anthropic import Anthropic
+            self.client = Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+            self.has_api = True
+            logger.info("Initialized Claude API for summarization")
+        except Exception as e:
+            logger.warning(f"Claude API not available: {e}. Will use template summaries.")
+            self.has_api = False
+    
     def generate_summary(self, job: JobListing) -> str:
-        """
-        Generate structured job summary for call scripts
-        
-        NOTE: This is a placeholder. Actual implementation requires:
-        - Anthropic Claude API integration
-        - Structured prompt engineering
-        - Cost optimization (use Haiku for high volume, Sonnet for quality)
-        """
-        logger.info(f"Generating summary for: {job.title}")
-        
-        # TODO: Implement actual Claude API call
-        # For now, return template
-        summary = f"""
-**Role:** {job.title}
-**Company:** {job.company_name}
-**Open Since:** {job.days_open} days
-**Pain Signals:** {self._get_pain_signals(job)}
+        """Generate structured job summary"""
+        if self.has_api:
+            return self._generate_with_claude(job)
+        else:
+            return self._generate_template(job)
+    
+    def _generate_with_claude(self, job: JobListing) -> str:
+        """Generate summary using Claude API"""
+        prompt = f"""You are helping a recruitment agency create concise summaries for sales calls.
+
+Given this job vacancy:
+- Title: {job.title}
+- Company: {job.company_name}
+- Posted: {job.days_open} days ago
+- Description: {job.description[:2000]}
+
+Create a structured summary in this exact format:
 
 **Must-Have Skills:**
-- [Extract from job description]
+- [Skill 1]
+- [Skill 2]
+- [Skill 3]
 
 **Key Requirements:**
-[2-3 sentence summary]
+[2-3 sentences describing the role expectations]
 
 **Special Features:**
-[Any standout details]
-        """.strip()
-        
-        return summary
+[Any standout details like remote work, equity, unique perks, or "None noted"]
+
+Keep it concise and focused on what a recruiter needs for an initial sales call."""
+
+        try:
+            message = self.client.messages.create(
+                model="claude-3-5-haiku-20241022",  # Cost-effective model
+                max_tokens=512,
+                temperature=0.3,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return message.content[0].text
+        except Exception as e:
+            logger.error(f"Claude API error: {e}")
+            return self._generate_template(job)
     
-    def _get_pain_signals(self, job: JobListing) -> str:
-        """Extract pain signals as human-readable string"""
-        signals = []
-        
-        if job.days_open > 60:
-            signals.append(f"{job.days_open}+ days open")
-        if job.total_applications > 100:
-            signals.append(f"{job.total_applications}+ applications")
-            
-        return ", ".join(signals) if signals else "Standard vacancy"
+    def _generate_template(self, job: JobListing) -> str:
+        """Fallback template-based summary"""
+        return f"""**Must-Have Skills:**
+- See full job description
+- {job.days_open}+ days open position
+- {job.location} location
+
+**Key Requirements:**
+{job.title} position at {job.company_name}. Review full posting for detailed requirements.
+
+**Special Features:**
+Manual review recommended for this vacancy."""
 
 
 # ============================================================================
-# 7. MAIN PIPELINE
+# 6. MAIN PIPELINE
 # ============================================================================
 
 class LeadGenerationPipeline:
     """Main orchestration pipeline"""
     
     def __init__(self):
-        self.stepstone_scraper = StepStoneScraper()
-        self.linkedin_scraper = LinkedInScraper()
         self.job_filter = JobFilter()
-        self.enricher = ContactEnricher()
+        self.enricher = ApolloEnricher(api_key=Config.APOLLO_API_KEY)
         self.summarizer = JobSummarizer()
         
-    def run(self, target_roles: List[str] = None) -> pd.DataFrame:
-        """
-        Execute complete lead generation pipeline
+        # Create output directory
+        os.makedirs(Config.OUTPUT_DIR, exist_ok=True)
         
-        Steps:
-        1. Scrape jobs from StepStone and LinkedIn
-        2. Filter and score based on pain signals
-        3. Enrich with decision-maker contacts
-        4. Generate job summaries
-        5. Export to HubSpot-ready CSV
-        """
+    def run(self) -> pd.DataFrame:
+        """Execute complete lead generation pipeline"""
         logger.info("=" * 60)
         logger.info("Starting Lead Generation Pipeline")
         logger.info("=" * 60)
         
-        if target_roles is None:
-            target_roles = Config.TARGET_ROLES
-            
-        # Step 1: Scrape jobs
-        logger.info("Step 1: Scraping job listings...")
-        stepstone_jobs = self.stepstone_scraper.scrape_jobs(target_roles)
-        linkedin_jobs = self.linkedin_scraper.scrape_jobs(target_roles)
-        all_jobs = stepstone_jobs + linkedin_jobs
-        logger.info(f"Total jobs scraped: {len(all_jobs)}")
+        # Step 1: Get jobs (using mock data for now)
+        logger.info("Step 1: Fetching job listings...")
+        all_jobs = generate_mock_jobs()
+        logger.info(f"Total jobs fetched: {len(all_jobs)}")
         
         # Step 2: Filter and score
         logger.info("Step 2: Filtering and scoring jobs...")
         qualified_jobs = self.job_filter.filter_and_score(all_jobs)
         logger.info(f"Qualified jobs: {len(qualified_jobs)}")
+        
+        if not qualified_jobs:
+            logger.warning("No qualified jobs found. Exiting.")
+            return pd.DataFrame()
         
         # Step 3: Enrich with contacts
         logger.info("Step 3: Enriching with decision-maker contacts...")
@@ -514,82 +471,114 @@ class LeadGenerationPipeline:
         for job in qualified_jobs:
             lead = EnrichedLead(job)
             
-            # Extract company domain from website
-            domain = self._extract_domain(job.company_website)
+            if lead.company_domain:
+                try:
+                    # Get contacts from Apollo
+                    contact_data = self.enricher.enrich_company(
+                        lead.company_domain,
+                        max_contacts=5
+                    )
+                    
+                    for contact_dict in contact_data:
+                        contact = Contact(contact_dict)
+                        lead.add_contact(contact)
+                    
+                    logger.info(f"Found {len(lead.contacts)} contacts for {job.company_name}")
+                    
+                except Exception as e:
+                    logger.error(f"Enrichment failed for {job.company_name}: {e}")
             
-            if domain:
-                # Get contacts
-                contacts = self.enricher.enrich_company(domain)
-                for contact in contacts:
-                    lead.add_contact(contact)
-                    
-                # Generate summary
+            # Generate summary
+            try:
                 lead.job_summary = self.summarizer.generate_summary(job)
+            except Exception as e:
+                logger.error(f"Summary generation failed for {job.title}: {e}")
+                lead.job_summary = "Summary generation failed"
+            
+            # Only keep leads that meet criteria
+            if lead.is_qualified():
+                enriched_leads.append(lead)
+                logger.info(f"✓ Qualified lead: {job.company_name} ({len(lead.contacts)} contacts)")
+            else:
+                logger.info(f"✗ Not qualified: {job.company_name} (only {len(lead.contacts)} contacts)")
                 
-                # Only keep leads that meet criteria
-                if lead.is_qualified():
-                    enriched_leads.append(lead)
-                    
-        logger.info(f"Enriched leads: {len(enriched_leads)}")
+        logger.info(f"Total enriched leads: {len(enriched_leads)}")
         
         # Step 4: Export to CSV
         logger.info("Step 4: Exporting to CSV...")
         df = self._leads_to_dataframe(enriched_leads)
         
+        if len(df) == 0:
+            logger.warning("No leads to export!")
+            return df
+        
         # Save CSV
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         filename = f"leads_export_{timestamp}.csv"
-        output_path = f"{Config.OUTPUT_DIR}/{filename}"
+        output_path = os.path.join(Config.OUTPUT_DIR, filename)
         df.to_csv(output_path, index=False, encoding=Config.CSV_ENCODING)
         
-        logger.info(f"Pipeline complete! Exported {len(df)} leads to {output_path}")
+        logger.info(f"✓ Pipeline complete! Exported {len(df)} leads to {output_path}")
         logger.info("=" * 60)
         
+        # Print summary
+        self._print_summary(df)
+        
         return df
-    
-    def _extract_domain(self, url: str) -> Optional[str]:
-        """Extract domain from company website URL"""
-        if not url:
-            return None
-            
-        # Simple regex extraction
-        pattern = r'(?:https?://)?(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,})'
-        match = re.search(pattern, url)
-        return match.group(1) if match else None
     
     def _leads_to_dataframe(self, leads: List[EnrichedLead]) -> pd.DataFrame:
         """Convert enriched leads to DataFrame"""
         rows = [lead.to_csv_row() for lead in leads]
         return pd.DataFrame(rows)
-
-
-# ============================================================================
-# 8. MAIN EXECUTION
-# ============================================================================
-
-def main():
-    """Main entry point for the lead generation system"""
     
-    # Initialize pipeline
-    pipeline = LeadGenerationPipeline()
-    
-    # Run pipeline
-    try:
-        results_df = pipeline.run()
-        
-        # Print summary statistics
+    def _print_summary(self, df: pd.DataFrame):
+        """Print summary statistics"""
         print("\n" + "=" * 60)
         print("PIPELINE SUMMARY")
         print("=" * 60)
-        print(f"Total leads generated: {len(results_df)}")
-        print(f"Average pain score: {results_df['pain_score'].mean():.1f}")
-        print(f"High-pain leads (80+): {len(results_df[results_df['pain_score'] >= 80])}")
-        print(f"Sources: {results_df['source'].value_counts().to_dict()}")
-        print("=" * 60)
+        print(f"Total leads generated: {len(df)}")
+        if len(df) > 0:
+            print(f"Average pain score: {df['pain_score'].mean():.1f}")
+            print(f"High-pain leads (80+): {len(df[df['pain_score'] >= 80])}")
+            print(f"Sources: {df['source'].value_counts().to_dict()}")
+        print("=" * 60 + "\n")
+
+
+# ============================================================================
+# 7. MAIN EXECUTION
+# ============================================================================
+
+def main():
+    """Main entry point"""
+    
+    # Check for required API keys
+    required_keys = {
+        'APOLLO_API_KEY': Config.APOLLO_API_KEY,
+    }
+    
+    missing_keys = [key for key, value in required_keys.items() if not value]
+    
+    if missing_keys:
+        logger.error(f"Missing required API keys: {', '.join(missing_keys)}")
+        logger.error("Please set these as environment variables or GitHub Secrets")
+        sys.exit(1)
+    
+    logger.info("All required API keys found ✓")
+    
+    # Initialize and run pipeline
+    try:
+        pipeline = LeadGenerationPipeline()
+        results_df = pipeline.run()
+        
+        if len(results_df) > 0:
+            logger.info("✓ SUCCESS: Pipeline completed successfully!")
+            logger.info(f"✓ CSV file created in {Config.OUTPUT_DIR}/ directory")
+        else:
+            logger.warning("⚠ WARNING: Pipeline completed but no leads qualified")
         
     except Exception as e:
-        logger.error(f"Pipeline failed: {str(e)}", exc_info=True)
-        raise
+        logger.error(f"✗ Pipeline failed: {str(e)}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
