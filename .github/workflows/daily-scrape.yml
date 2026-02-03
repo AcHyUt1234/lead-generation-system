@@ -1,15 +1,21 @@
-name: Daily Lead Generation
+name: Lead Generation Pipeline
 
 on:
-  schedule:
-    # Run every day at 3 AM UTC
-    - cron: '0 3 * * *'
-  workflow_dispatch: # Allow manual triggers
+  # Run manually from Actions tab
+  workflow_dispatch:
+  
+  # Uncomment below to run on schedule (daily at 3 AM UTC)
+  # schedule:
+  #   - cron: '0 3 * * *'
+  
+  # Uncomment below to run on every push (useful for testing)
+  # push:
+  #   branches: [ master ]
 
 jobs:
-  scrape-and-enrich:
+  generate-leads:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # 6 hours max
+    timeout-minutes: 60  # 1 hour max
     
     steps:
     - name: Checkout code
@@ -22,19 +28,39 @@ jobs:
     
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
+        python -m pip install --upgrade pip
+        pip install pandas requests anthropic
     
-    - name: Run pipeline
+    - name: Create outputs directory
+      run: mkdir -p outputs
+    
+    - name: Run lead generation pipeline
       env:
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        LEAP_API_KEY: ${{ secrets.LEAP_API_KEY }}
+        APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
         HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
       run: |
         python lead_generation_pipeline.py
     
-    - name: Upload results
+    - name: Upload CSV results
       uses: actions/upload-artifact@v4
+      if: always()  # Upload even if previous steps fail
       with:
         name: lead-export-${{ github.run_number }}
         path: outputs/*.csv
-        retention-days: 30
+        retention-days: 90
+        if-no-files-found: warn
+    
+    - name: Display results summary
+      if: always()
+      run: |
+        echo "==================================================="
+        echo "Pipeline Execution Complete"
+        echo "==================================================="
+        if [ -f outputs/*.csv ]; then
+          echo "✓ CSV file(s) created successfully"
+          ls -lh outputs/
+        else
+          echo "⚠ No CSV files found"
+        fi
+        echo "==================================================="
