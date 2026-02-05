@@ -69,11 +69,11 @@ class Config:
     ]
     
     # Pain scoring thresholds
-    MIN_PAIN_SCORE = 60
+    MIN_PAIN_SCORE = 0
     HIGH_PAIN_THRESHOLD = 80
     
     # Enrichment settings
-    MIN_CONTACTS_PER_COMPANY = 3
+    MIN_CONTACTS_PER_COMPANY = 1
     
     # Output settings
     OUTPUT_DIR = "outputs"  # Changed for GitHub Actions compatibility
@@ -508,15 +508,17 @@ class LeadGenerationPipeline:
         logger.info("Step 4: Exporting to CSV...")
         df = self._leads_to_dataframe(enriched_leads)
         
-        if len(df) == 0:
-            logger.warning("No leads to export!")
-            return df
-        
         # Save CSV
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         filename = f"leads_export_{timestamp}.csv"
         output_path = os.path.join(Config.OUTPUT_DIR, filename)
+
+        # Always write, even if empty
         df.to_csv(output_path, index=False, encoding=Config.CSV_ENCODING)
+
+        if len(df) == 0:
+            logger.warning("No leads to export!")
+            return df
         
         logger.info(f"✓ Pipeline complete! Exported {len(df)} leads to {output_path}")
         logger.info("=" * 60)
