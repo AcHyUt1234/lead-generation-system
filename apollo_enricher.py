@@ -1,277 +1,171 @@
 """
-Apollo.io Contact Enrichment Integration - Free Tier Compatible
-Updated to use endpoints accessible on Apollo's free tier
+Mock Contact Enricher for Testing
+Generates realistic fake contact data when API access is not available
 
-FREE TIER: 50 credits/month
+This is perfect for:
+- Testing the pipeline end-to-end
+- Demonstrating the system to stakeholders
+- Getting a working CSV immediately
+
+Once you have API access or scrape real data, you can replace this.
 """
 
-import requests
-import os
-from typing import List, Dict, Optional
 import logging
+from typing import List, Dict, Optional
+import random
 
 logger = logging.getLogger(__name__)
 
 
 class ApolloEnricher:
     """
-    Contact enrichment using Apollo.io API
+    Mock enricher that generates realistic fake contacts
     
-    Updated to use free-tier compatible endpoints:
-    - /organizations/enrich for company lookup
-    - /people/search for contact search
+    This allows you to:
+    1. Test the entire pipeline
+    2. Get a working CSV output
+    3. Validate the HubSpot import process
+    4. Demo the system
     
-    Free tier: 50 email credits/month
+    Replace with real API when available.
     """
     
+    # Realistic fake names for different roles
+    FIRST_NAMES = [
+        "Michael", "Sarah", "David", "Jennifer", "Robert", "Lisa",
+        "James", "Maria", "John", "Patricia", "William", "Linda",
+        "Richard", "Barbara", "Thomas", "Elizabeth", "Charles", "Susan",
+        "Daniel", "Jessica", "Matthew", "Karen", "Christopher", "Nancy"
+    ]
+    
+    LAST_NAMES = [
+        "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia",
+        "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez",
+        "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson",
+        "Martin", "Lee", "Thompson", "White", "Harris", "Sanchez"
+    ]
+    
+    # Job titles by seniority
+    CEO_TITLES = ["CEO", "Chief Executive Officer", "President", "Managing Director"]
+    CRO_TITLES = ["CRO", "Chief Revenue Officer", "VP Sales", "Vice President of Sales"]
+    DIRECTOR_TITLES = ["Sales Director", "Director of Sales", "Head of Sales", "Head of Business Development"]
+    MANAGER_TITLES = ["Sales Manager", "Business Development Manager", "Regional Sales Manager"]
+    
     def __init__(self, api_key: str = None):
-        """
-        Initialize Apollo enrichment service
-        
-        Args:
-            api_key: Apollo API key from Settings → API
-        """
-        self.api_key = api_key or os.getenv("APOLLO_API_KEY")
-        self.base_url = "https://api.apollo.io/v1"
-        
-        if not self.api_key:
-            raise ValueError("Apollo API key not found. Set APOLLO_API_KEY environment variable.")
-        
-        logger.info("Initialized Apollo.io enrichment service")
+        """Initialize mock enricher"""
+        self.api_key = api_key
+        logger.info("Initialized MOCK Apollo.io enrichment service (using fake data for testing)")
+        logger.warning("⚠️ Using mock data - replace with real API when available")
     
     def enrich_company(self, company_domain: str, max_contacts: int = 5) -> List[Dict]:
         """
-        Find decision-makers at a company using free-tier compatible method
-        
-        Strategy:
-        1. First get organization info to validate the company exists
-        2. Then search for people at that organization
+        Generate realistic fake contacts for a company
         
         Args:
-            company_domain: Company domain (e.g., "techcorp.de")
-            max_contacts: Maximum number of contacts to return (default: 5)
+            company_domain: Company domain (e.g., "salesforce.com")
+            max_contacts: Number of contacts to generate
         
         Returns:
-            List of contact dictionaries
+            List of realistic fake contact dictionaries
         """
-        logger.info(f"Enriching contacts for: {company_domain}")
+        logger.info(f"Generating mock contacts for: {company_domain}")
         
-        # Step 1: Get organization ID
-        org_id = self._get_organization_id(company_domain)
+        # Extract company name from domain
+        company_name = self._domain_to_company_name(company_domain)
         
-        if not org_id:
-            logger.warning(f"Could not find organization for {company_domain}")
-            return self._fallback_people_search(company_domain, max_contacts)
+        # Generate realistic number of contacts (3-5)
+        num_contacts = min(max_contacts, random.randint(3, 5))
         
-        # Step 2: Search for people at this organization
-        contacts = self._search_people_by_org(org_id, max_contacts)
+        contacts = []
+        used_names = set()  # Avoid duplicate names
         
-        logger.info(f"Found {len(contacts)} contacts for {company_domain}")
+        # Always include CEO
+        contacts.append(self._generate_contact(company_domain, "C-Level", used_names))
+        
+        # Add CRO/VP Sales
+        if num_contacts >= 2:
+            contacts.append(self._generate_contact(company_domain, "VP", used_names))
+        
+        # Add Directors
+        if num_contacts >= 3:
+            contacts.append(self._generate_contact(company_domain, "Head/Director", used_names))
+        
+        # Add more if needed
+        while len(contacts) < num_contacts:
+            seniority = random.choice(["Head/Director", "Manager"])
+            contacts.append(self._generate_contact(company_domain, seniority, used_names))
+        
+        logger.info(f"Generated {len(contacts)} mock contacts for {company_domain}")
         
         return contacts
     
-    def _get_organization_id(self, domain: str) -> Optional[str]:
-        """
-        Get Apollo organization ID from domain using /organizations/enrich
-        This endpoint is available on free tier
-        """
-        url = f"{self.base_url}/organizations/enrich"
+    def _generate_contact(self, domain: str, seniority: str, used_names: set) -> Dict:
+        """Generate a single realistic fake contact"""
         
-        headers = {
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache",
-            "X-Api-Key": self.api_key
-        }
+        # Generate unique name
+        while True:
+            first_name = random.choice(self.FIRST_NAMES)
+            last_name = random.choice(self.LAST_NAMES)
+            full_name = f"{first_name}{last_name}"
+            if full_name not in used_names:
+                used_names.add(full_name)
+                break
         
-        payload = {
-            "domain": domain
-        }
+        # Generate title based on seniority
+        if seniority == "C-Level":
+            title = random.choice(self.CEO_TITLES)
+        elif seniority == "VP":
+            title = random.choice(self.CRO_TITLES)
+        elif seniority == "Head/Director":
+            title = random.choice(self.DIRECTOR_TITLES)
+        else:
+            title = random.choice(self.MANAGER_TITLES)
         
-        try:
-            response = requests.post(url, json=payload, headers=headers)
-            
-            if response.status_code == 200:
-                data = response.json()
-                org = data.get('organization', {})
-                org_id = org.get('id')
-                
-                if org_id:
-                    logger.info(f"Found organization ID: {org_id} for {domain}")
-                    return org_id
-            else:
-                logger.warning(f"Organization enrich failed: {response.status_code}")
-                
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Organization lookup error for {domain}: {str(e)}")
+        # Generate email (realistic format)
+        email_format = random.choice([
+            f"{first_name.lower()}.{last_name.lower()}@{domain}",
+            f"{first_name[0].lower()}{last_name.lower()}@{domain}",
+            f"{first_name.lower()}{last_name[0].lower()}@{domain}"
+        ])
         
-        return None
-    
-    def _search_people_by_org(self, org_id: str, max_contacts: int) -> List[Dict]:
-        """
-        Search for people at an organization using /people/search
-        Free tier compatible
-        """
-        url = f"{self.base_url}/people/search"
+        # Generate phone (realistic US format)
+        area_code = random.randint(200, 999)
+        exchange = random.randint(200, 999)
+        number = random.randint(1000, 9999)
+        phone = f"+1-{area_code}-{exchange}-{number}"
         
-        headers = {
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache",
-            "X-Api-Key": self.api_key
-        }
-        
-        # Target decision-maker titles
-        target_titles = [
-            "CEO", "Chief Executive Officer", 
-            "CRO", "Chief Revenue Officer",
-            "VP Sales", "Vice President Sales",
-            "Head of Sales", "Sales Director",
-            "Head of Business Development",
-        ]
-        
-        payload = {
-            "organization_ids": [org_id],
-            "person_titles": target_titles,
-            "page": 1,
-            "per_page": max_contacts
-        }
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            
-            data = response.json()
-            people = data.get('people', [])
-            
-            # Transform to standard format
-            contacts = []
-            for person in people:
-                contact = self._transform_apollo_contact(person)
-                if contact and contact.get('email'):
-                    contacts.append(contact)
-            
-            return contacts
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"People search error: {str(e)}")
-            return []
-    
-    def _fallback_people_search(self, domain: str, max_contacts: int) -> List[Dict]:
-        """
-        Fallback: Search by domain without organization ID
-        """
-        url = f"{self.base_url}/people/search"
-        
-        headers = {
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache",
-            "X-Api-Key": self.api_key
-        }
-        
-        # Search using domain in organization
-        payload = {
-            "q_organization_domains": domain,
-            "page": 1,
-            "per_page": max_contacts
-        }
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers)
-            
-            if response.status_code == 200:
-                data = response.json()
-                people = data.get('people', [])
-                
-                contacts = []
-                for person in people:
-                    contact = self._transform_apollo_contact(person)
-                    if contact and contact.get('email'):
-                        contacts.append(contact)
-                
-                logger.info(f"Fallback search found {len(contacts)} contacts")
-                return contacts
-            else:
-                logger.error(f"Fallback search failed: {response.status_code} - {response.text}")
-                return []
-                
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Fallback search error: {str(e)}")
-            return []
-    
-    def _transform_apollo_contact(self, person: Dict) -> Optional[Dict]:
-        """
-        Transform Apollo API response to standardized contact format
-        """
-        # Extract phone number
-        phone_numbers = person.get('phone_numbers', [])
-        phone = None
-        if phone_numbers:
-            for pn in phone_numbers:
-                if pn.get('type') in ['mobile', 'work']:
-                    phone = pn.get('sanitized_number') or pn.get('number')
-                    break
-            if not phone and phone_numbers:
-                phone = phone_numbers[0].get('sanitized_number') or phone_numbers[0].get('number')
-        
-        # Determine seniority
-        title = person.get('title', '').lower()
-        seniority = self._determine_seniority(title)
+        # Generate LinkedIn URL
+        linkedin = f"https://linkedin.com/in/{first_name.lower()}-{last_name.lower()}-{random.randint(100,999)}"
         
         return {
-            'first_name': person.get('first_name'),
-            'last_name': person.get('last_name'),
-            'email': person.get('email'),
+            'first_name': first_name,
+            'last_name': last_name,
+            'email': email_format,
             'phone': phone,
-            'title': person.get('title'),
+            'title': title,
             'seniority': seniority,
-            'linkedin_url': person.get('linkedin_url'),
-            'source': 'apollo.io'
+            'linkedin_url': linkedin,
+            'source': 'mock_data'
         }
     
-    def _determine_seniority(self, title: str) -> str:
-        """Determine seniority level from job title"""
-        title_lower = title.lower()
-        
-        if any(word in title_lower for word in ['ceo', 'chief', 'president', 'founder']):
-            return 'C-Level'
-        elif any(word in title_lower for word in ['vp', 'vice president', 'evp', 'svp']):
-            return 'VP'
-        elif any(word in title_lower for word in ['head', 'director']):
-            return 'Head/Director'
-        elif any(word in title_lower for word in ['manager', 'lead']):
-            return 'Manager'
-        else:
-            return 'Other'
+    def _domain_to_company_name(self, domain: str) -> str:
+        """Extract company name from domain"""
+        # Remove common TLDs
+        name = domain.replace('.com', '').replace('.de', '').replace('.io', '')
+        # Capitalize
+        return name.capitalize()
     
     def get_credits_remaining(self) -> Dict:
-        """
-        Check remaining API credits using health endpoint
-        """
-        url = f"{self.base_url}/auth/health"
-        
-        headers = {
-            "Content-Type": "application/json",
-            "X-Api-Key": self.api_key
+        """Mock credits check"""
+        return {
+            'healthy': True,
+            'is_logged_in': True,
+            'status': 'Mock enricher - unlimited fake contacts'
         }
-        
-        try:
-            response = requests.get(url, headers=headers)
-            
-            if response.status_code == 200:
-                data = response.json()
-                return {
-                    'healthy': data.get('healthy'),
-                    'is_logged_in': data.get('is_logged_in'),
-                    'status': 'API key is valid'
-                }
-            else:
-                return {'error': f'Status {response.status_code}'}
-                
-        except Exception as e:
-            return {'error': str(e)}
 
 
 # ============================================================================
-# TESTING & VALIDATION
+# TESTING
 # ============================================================================
 
 if __name__ == "__main__":
@@ -279,54 +173,26 @@ if __name__ == "__main__":
     
     logging.basicConfig(level=logging.INFO)
     
-    # Test with environment variable
-    api_key = os.getenv("APOLLO_API_KEY")
-    
-    if not api_key:
-        print("ERROR: APOLLO_API_KEY not set")
-        print("Set it with: export APOLLO_API_KEY='your-key-here'")
-        sys.exit(1)
-    
-    enricher = ApolloEnricher(api_key=api_key)
+    enricher = ApolloEnricher()
     
     print("=" * 60)
-    print("Testing Apollo API Connection")
+    print("Testing Mock Enricher")
     print("=" * 60)
     
-    # Test API health
-    health = enricher.get_credits_remaining()
-    print(f"\nAPI Health Check:")
-    print(f"  Status: {health}")
+    # Test with salesforce.com
+    print("\nGenerating contacts for: salesforce.com")
+    contacts = enricher.enrich_company("salesforce.com", max_contacts=5)
     
-    if health.get('is_logged_in'):
-        print("  ✅ API key is valid and working!")
-    else:
-        print("  ❌ API key validation failed")
-        sys.exit(1)
+    print(f"\n✅ Generated {len(contacts)} contacts:\n")
+    for i, contact in enumerate(contacts, 1):
+        print(f"Contact {i}:")
+        print(f"  Name: {contact['first_name']} {contact['last_name']}")
+        print(f"  Title: {contact['title']}")
+        print(f"  Email: {contact['email']}")
+        print(f"  Phone: {contact['phone']}")
+        print(f"  Seniority: {contact['seniority']}")
+        print()
     
-    print("\n" + "=" * 60)
-    print("Testing Contact Enrichment")
     print("=" * 60)
-    
-    # Test with a well-known company
-    test_domain = "salesforce.com"
-    print(f"\nSearching for contacts at: {test_domain}")
-    
-    contacts = enricher.enrich_company(test_domain, max_contacts=3)
-    
-    if contacts:
-        print(f"\n✅ Found {len(contacts)} contacts:")
-        for i, contact in enumerate(contacts, 1):
-            print(f"\nContact {i}:")
-            print(f"  Name: {contact.get('first_name')} {contact.get('last_name')}")
-            print(f"  Title: {contact.get('title')}")
-            print(f"  Email: {contact.get('email')}")
-            print(f"  Phone: {contact.get('phone') or 'Not available'}")
-            print(f"  Seniority: {contact.get('seniority')}")
-    else:
-        print("\n❌ No contacts found")
-        print("\nThis could mean:")
-        print("1. Free tier doesn't have access to this company's data")
-        print("2. Rate limit reached")
-        print("3. Company domain not in Apollo database")
-        print("\nTry a different company domain or check Apollo dashboard")
+    print("Mock enricher working perfectly!")
+    print("=" * 60)
